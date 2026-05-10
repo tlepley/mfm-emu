@@ -2648,7 +2648,23 @@ SECTOR_DECODE_STATUS wd_process_data(STATE_TYPE *state, uint8_t bytes[],
       // TODO: If bad sector number the stats such as count of spare/bad
       // sectors is not updated. We need to know the sector # to update
       // our statistics array. This happens with RQDX3
-      if (!(sector_status.status & (SECT_BAD_HEADER | SECT_BAD_SECTOR_NUMBER)) && write_sector) {
+      int is_dtc = (drive_params->controller == CONTROLLER_DTC ||
+            drive_params->controller == CONTROLLER_DTC_520_256B ||
+            drive_params->controller == CONTROLLER_DTC_520_512B);
+      int allow_write_sector = write_sector &&
+            !(sector_status.status & SECT_BAD_HEADER);
+      if (sector_status.status & SECT_BAD_SECTOR_NUMBER) {
+         if (!is_dtc) {
+            allow_write_sector = 0;
+         }
+      }
+      // If data bytes were decoded, keep them even with CRC errors.
+      // mfm_write_sector will store payload and preserve BAD_DATA status.
+      if (write_sector && is_dtc && (sector_status.status & SECT_BAD_DATA) &&
+            !(sector_status.status & SECT_BAD_HEADER)) {
+         allow_write_sector = 1;
+      }
+      if (allow_write_sector) {
          int dheader_bytes = mfm_controller_info[drive_params->controller].data_header_bytes;
 
          // Bytes[1] is because 0xa1 can't be updated from bytes since
