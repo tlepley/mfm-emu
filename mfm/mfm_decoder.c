@@ -181,6 +181,7 @@
 #include "crc_ecc.h"
 #include "emu_tran_file.h"
 #include "mfm_decoder.h"
+#include "mfmx.h"
 #include "deltas_read.h"
 
 #define ARRAYSIZE(x)  (sizeof(x) / sizeof(x[0]))
@@ -434,6 +435,53 @@ static void print_sector_list_status(DRIVE_PARAMS *drive_params,
 }
 
 
+
+static void export_unwritten_sectors_to_mfmx(DRIVE_PARAMS *drive_params,
+      SECTOR_STATUS sector_status_list[], int track_cyl, int track_head) {
+   if (!mfmx_is_active()) {
+      return;
+   }
+   if (sector_status_list == NULL || drive_params->sector_numbers == NULL) {
+      return;
+   }
+   if (track_cyl < 0 || track_head < 0) {
+      return;
+   }
+   for (int phys = 0; phys < drive_params->num_sectors; phys++) {
+      int fallback_sector_id = drive_params->sector_numbers[phys];
+      int rel = fallback_sector_id - drive_params->first_sector_number;
+      if (rel < 0 || rel >= drive_params->num_sectors) {
+         continue;
+      }
+      if (!(sector_status_list[rel].status & SECT_NOT_WRITTEN)) {
+         continue;
+      }
+
+      SECTOR_STATUS st = sector_status_list[rel];
+      st.cyl = track_cyl;
+      st.head = track_head;
+
+      // Prefer the sector number read from header when available.
+      int header_sector_id = st.sector;
+      if (header_sector_id >= drive_params->first_sector_number &&
+            header_sector_id < (drive_params->first_sector_number + drive_params->num_sectors)) {
+         st.sector = header_sector_id;
+      } else {
+         st.sector = fallback_sector_id;
+      }
+      st.logical_sector = phys;
+      st.status &= ~SECT_BAD_HEADER;
+      st.status &= ~SECT_BAD_SECTOR_NUMBER;
+      st.status &= ~SECT_BAD_LBA_NUMBER;
+      if (!(st.status & SECT_BAD_DATA)) {
+         st.status |= SECT_BAD_DATA;
+      }
+
+      mfmx_record_sector(drive_params, &st, NULL,
+         (uint32_t) drive_params->sector_size);
+   }
+}
+
 // Update statistics for the read so we can print summary at the end.
 // Since we may be called multiple times for the same track if errors are
 // retried only update the statistics and print errors when the track
@@ -449,6 +497,10 @@ static void update_stats(DRIVE_PARAMS *drive_params, int cyl, int head,
    int i;
    int write_cyl = last_cyl;
 
+
+   if (sector_status_list != NULL) {
+      mfmx_finish_track_read(drive_params, cyl, head);
+   }
 
    // If track changed and list has been set (last_cyl != -1) then process
    if (last_cyl != -1 && (cyl != last_cyl || head != last_head)) {
@@ -492,6 +544,7 @@ static void update_stats(DRIVE_PARAMS *drive_params, int cyl, int head,
 #endif
       update_emu_track_words(drive_params, sector_status_list, 1, 1, 
           write_cyl, last_head);
+      export_unwritten_sectors_to_mfmx(drive_params, last_sector_list, last_cyl, last_head);
       for (i = 0; i < drive_params->num_sectors; i++) {
          if (last_sector_list[i].status & SECT_ECC_RECOVERED &&
              !(last_sector_list[i].status & SECT_SPARE_BAD)) {
@@ -530,8 +583,10 @@ void mfm_end_track(DRIVE_PARAMS *drive_params,
    if (drive_params->xebec_skew) {
       // Make sure entire track written. If bad header or other errors the
       // sectors won't be written to the file. This will zero fill.
-      ftruncate(drive_params->ext_fd, (cyl * drive_params->num_head + (head+1)) *
-          drive_params->num_sectors * drive_params->sector_size);
+      if (drive_params->ext_fd >= 0) {
+         ftruncate(drive_params->ext_fd, (cyl * drive_params->num_head + (head+1)) *
+             drive_params->num_sectors * drive_params->sector_size);
+      }
 
       mfm_remap_track(drive_params, cyl, head); 
    }
@@ -830,22 +885,25 @@ void mfm_decode_setup(DRIVE_PARAMS *drive_params, int write_files)
    drive_params->ext_metadata_fd = -1;
    drive_params->ext_fd = -1;
    if (write_files && drive_params->extract_filename != NULL) {
-      drive_params->ext_fd = open(drive_params->extract_filename, O_RDWR | O_CREAT |
-            O_TRUNC, 0664);
-      if (drive_params->ext_fd < 0) {
-         perror("Unable to create output extracted data file");
-         exit(1);
-      }
-      if (mfm_controller_info[drive_params->controller].metadata_bytes != 0) {
-         char extention[] = ".metadata";
-         char fn[strlen(drive_params->extract_filename) + strlen(extention) + 1];
-
-         strcpy(fn, drive_params->extract_filename);
-         strcat(fn, extention);
-         drive_params->ext_metadata_fd = open(fn, O_RDWR | O_CREAT | O_TRUNC, 0664);
-         if (drive_params->ext_metadata_fd < 0) {
-            perror("Unable to create metadata output file");
+      mfmx_setup(drive_params);
+      if (!mfmx_is_active()) {
+         drive_params->ext_fd = open(drive_params->extract_filename, O_RDWR | O_CREAT |
+               O_TRUNC, 0664);
+         if (drive_params->ext_fd < 0) {
+            perror("Unable to create output extracted data file");
             exit(1);
+         }
+         if (mfm_controller_info[drive_params->controller].metadata_bytes != 0) {
+            char extention[] = ".metadata";
+            char fn[strlen(drive_params->extract_filename) + strlen(extention) + 1];
+
+            strcpy(fn, drive_params->extract_filename);
+            strcat(fn, extention);
+            drive_params->ext_metadata_fd = open(fn, O_RDWR | O_CREAT | O_TRUNC, 0664);
+            if (drive_params->ext_metadata_fd < 0) {
+               perror("Unable to create metadata output file");
+               exit(1);
+            }
          }
       }
    }
@@ -914,6 +972,9 @@ void mfm_decode_done(DRIVE_PARAMS * drive_params)
           drive_params->num_sectors * drive_params->sector_size);
       fix_ext_alt_tracks(drive_params);
       close(drive_params->ext_fd);
+   }
+   if (mfmx_is_active()) {
+      mfmx_done(drive_params);
    }
 
    if (stats->min_cyl != INT_MAX) {
@@ -1061,6 +1122,10 @@ void mfm_check_header_values(int exp_cyl, int exp_head,
       sector_status->logical_sector = *sector_index;
       (*sector_index)++;
    }
+   if (mfmx_is_active() && !(sector_status->status & SECT_BAD_HEADER)) {
+      mfmx_note_sector_header(drive_params, sector_status);
+   }
+
    if (sector_size != drive_params->sector_size) {
       msg(MSG_ERR,"Expected sector size %d header says %d cyl %d head %d sector %d\n",
             drive_params->sector_size, sector_size, sector_status->cyl,
@@ -1165,6 +1230,7 @@ int mfm_write_sector(uint8_t bytes[], DRIVE_PARAMS * drive_params,
    if (sector_status->ignore) {
       return 0;
    }
+
 
    // Some disks number sectors starting from 1. We need them starting
    // from 0.
@@ -1285,6 +1351,14 @@ int mfm_write_sector(uint8_t bytes[], DRIVE_PARAMS * drive_params,
          sector_good[sector_status->cyl][sector_status->head][sect_rel0] = new_good;
       }
    }
+   int export_mfmx_bad_data = 0;
+   if (!update && mfmx_is_active() && (sector_status->status & SECT_BAD_DATA) &&
+         !(sector_status->status & (SECT_BAD_HEADER | SECT_BAD_SECTOR_NUMBER |
+         SECT_BAD_LBA_NUMBER)) &&
+         (sector_status_list[sect_rel0].status & SECT_NOT_WRITTEN)) {
+      export_mfmx_bad_data = 1;
+   }
+
    if (update) {
       if (drive_params->ext_fd >= 0) {
          if (sector_status->is_lba) {
@@ -1308,6 +1382,11 @@ int mfm_write_sector(uint8_t bytes[], DRIVE_PARAMS * drive_params,
          }
       }
       sector_status_list[sect_rel0] = *sector_status;
+   }
+
+   if (mfmx_is_active() && (update || export_mfmx_bad_data)) {
+      mfmx_record_sector(drive_params, sector_status, bytes,
+         drive_params->sector_size);
    }
    sector_status_list[sect_rel0].last_status = sector_status->status;
 
