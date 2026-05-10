@@ -7,7 +7,7 @@
 # o  print "Entering directory ...";
 MAKEFLAGS += -rR --no-print-directory
 
-SUBDIRS := $(wildcard */.)
+SUBDIRS := $(patsubst %/Makefile,%/.,$(wildcard */Makefile))
 TARGETS := all clean
 
 SUBDIRS_TARGETS := \
@@ -34,4 +34,3 @@ help:
 	@echo ""
 	@echo "This top-level Makefile recurses over these subdirectories:"
 	@echo "        $(wildcard */)"
-
