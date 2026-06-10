@@ -69,6 +69,18 @@ double drive_rpm() {
    return 0;
 }
 
+static int map_logical_to_physical_head(DRIVE_PARAMS *drive_params, int head) {
+   if (!drive_params->head_map_specified) {
+      return head;
+   }
+   for (int i = 0; i < MAX_HEAD; i++) {
+      if (drive_params->head_map[i] == head) {
+         return i;
+      }
+   }
+   return head;
+}
+
 // This reads the proper track from the file and puts it in the delta array
 // for decoding. Its a little wasteful to convert decoded bits from an
 // emulation file back to deltas so we can convert back to bits but it
@@ -77,9 +89,10 @@ double drive_rpm() {
 int drive_read_track(DRIVE_PARAMS *drive_params, int cyl, int head,
       void *deltas, int max_deltas, int return_write_fault) {
    int num_deltas;
+   int physical_head = map_logical_to_physical_head(drive_params, head);
 
    if (drive_params->tran_fd != -1) {
-      if (tran_file_seek_track(drive_params->tran_fd, cyl, head, 
+      if (tran_file_seek_track(drive_params->tran_fd, cyl, physical_head,
             drive_params->tran_file_info)) {
          num_deltas = 0;
       } else {
@@ -87,7 +100,7 @@ int drive_read_track(DRIVE_PARAMS *drive_params, int cyl, int head,
                deltas, max_deltas, &cyl, &head);
       }
    } else {
-      if (emu_file_seek_track(drive_params->emu_fd, cyl, head, 
+      if (emu_file_seek_track(drive_params->emu_fd, cyl, physical_head,
             drive_params->emu_file_info)) {
          num_deltas = 0;
       } else {

@@ -97,12 +97,72 @@ typedef struct {
 
 void ext2emu(int argc, char *argv[]);
 
+static int get_decode_head(DRIVE_PARAMS *drive_params, int head) {
+   if (head < 0 || head >= MAX_HEAD) {
+      return -1;
+   }
+   if (drive_params->head_map_specified) {
+      int decode_head = drive_params->head_map[head];
+
+      if (decode_head >= drive_params->num_head) {
+         msg(MSG_FATAL, "Head map logical head %d outside --heads %d\n",
+            decode_head, drive_params->num_head);
+         exit(1);
+      }
+      return decode_head;
+   }
+   if (head >= drive_params->num_head) {
+      return -1;
+   }
+   return head;
+}
+
+static int read_selected_track(DRIVE_PARAMS *drive_params, int transition_file,
+      uint16_t deltas[], int max_deltas, int *cyl, int *head,
+      int *decode_head) {
+   int num_deltas;
+   int skipped = 0;
+
+   do {
+      if (transition_file) {
+         num_deltas = tran_file_read_track_deltas(drive_params->tran_fd,
+               deltas, max_deltas, cyl, head);
+      } else {
+         num_deltas = emu_file_read_track_deltas(drive_params->emu_fd,
+               drive_params->emu_file_info, deltas, max_deltas, cyl, head);
+      }
+      if (num_deltas < 0) {
+         return num_deltas;
+      }
+      *decode_head = get_decode_head(drive_params, *head);
+      if (*decode_head < 0) {
+         skipped = 1;
+      }
+   } while (*decode_head < 0);
+
+   if (skipped) {
+      static int msg_printed = 0;
+
+      if (!msg_printed) {
+         if (drive_params->head_map_specified) {
+            msg(MSG_INFO, "Warning, data for heads not listed in --head_map ignored\n");
+         } else {
+            msg(MSG_INFO, "Warning, data has more heads than specified. Data for head >= %d ignored\n",
+               drive_params->num_head);
+         }
+         msg_printed = 1;
+      }
+   }
+   return num_deltas;
+}
+
 // Main routine
 int main (int argc, char *argv[])
 {
    uint16_t deltas[MAX_DELTAS];
    int num_deltas;
    int cyl, head;
+   int decode_head;
    int last_cyl = -1, last_head = -1;
    DRIVE_PARAMS drive_params;
    // This is in order of physcial sector. First entry is the first
@@ -247,20 +307,15 @@ int main (int argc, char *argv[])
    // Setup decoding of transitions and possible file to write to
    mfm_decode_setup(&drive_params, 1);
 
-   if (transition_file) {
-      num_deltas = tran_file_read_track_deltas(drive_params.tran_fd,
-            deltas, MAX_DELTAS, &cyl, &head);
-   } else {
-      num_deltas = emu_file_read_track_deltas(drive_params.emu_fd,
-            &emu_file_info, deltas, MAX_DELTAS, &cyl, &head);
-   }
+   num_deltas = read_selected_track(&drive_params, transition_file, deltas,
+         MAX_DELTAS, &cyl, &head, &decode_head);
    // Read and process a track at a time until all read
    while (num_deltas >= 0) {
-      if (cyl % 10 == 0 && head == 0)
+      if (cyl % 10 == 0 && decode_head == 0)
          msg(MSG_PROGRESS, "At cyl %d\r", cyl);
       // Only clear status if we are moving to the next track. If retries
       // were done we may have multiple reads of the same track.
-      if (last_cyl != cyl || last_head != head) {
+      if (last_cyl != cyl || last_head != decode_head) {
          mfm_init_sector_status_list(sector_status_list,
                drive_params.num_sectors);
          if (last_cyl != -1) {
@@ -270,7 +325,7 @@ int main (int argc, char *argv[])
       //printf("Decoding new track %d %d\n",cyl, head);
       deltas_update_count(num_deltas, 0);
       // If head & cylinder haven't changed assume it's a retry.
-      mfm_decode_track(&drive_params, cyl, head, deltas,
+      mfm_decode_track(&drive_params, cyl, decode_head, deltas,
             &seek_difference, sector_status_list);
 #if 0
       if (1 || status != SECT_HEADER_FOUND) {
@@ -288,23 +343,9 @@ int main (int argc, char *argv[])
       }
 #endif
       last_cyl = cyl;
-      last_head = head;
-      if (transition_file) {
-         num_deltas = tran_file_read_track_deltas(drive_params.tran_fd,
-               deltas, MAX_DELTAS, &cyl, &head);
-         while (head >= drive_params.num_head) {
-            static int msg_printed = 0;
-            if (!msg_printed) {
-               msg(MSG_INFO, "Warning, data has more heads than specified. Data for head >= %d ignored\n", head);
-               msg_printed = 1;
-            }
-            num_deltas = tran_file_read_track_deltas(drive_params.tran_fd,
-               deltas, MAX_DELTAS, &cyl, &head);
-         }
-      } else {
-         num_deltas = emu_file_read_track_deltas(drive_params.emu_fd,
-               &emu_file_info, deltas, MAX_DELTAS, &cyl, &head);
-      }
+      last_head = decode_head;
+      num_deltas = read_selected_track(&drive_params, transition_file, deltas,
+            MAX_DELTAS, &cyl, &head, &decode_head);
    }
    if (last_cyl != -1) {
       mfm_end_track(&drive_params, last_cyl, last_head);
@@ -1201,5 +1242,3 @@ void ext2emu(int argc, char *argv[])
    }
    emu_file_close(drive_params.emu_fd, 1);
 }
-
-

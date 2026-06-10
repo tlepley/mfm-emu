@@ -2353,6 +2353,10 @@ static void print_missing_cyl(DRIVE_PARAMS *drive_params) {
 // exp_head: Expected head
 // return: Corrected head value
 int mfm_fix_head(DRIVE_PARAMS *drive_params, int exp_head, int head) {
+   if (drive_params->head_map_specified && head >= 0 && head < MAX_HEAD &&
+         drive_params->head_map[head] != -1) {
+      head = drive_params->head_map[head];
+   }
    // WD 1003 controllers wrote 3 bit head code so head 8 is written as 0.
    // If requested and head seems correct fix read head value.
 //printf("3 bit %d, head %d exp %d\n",drive_params->head_3bit, head, exp_head);

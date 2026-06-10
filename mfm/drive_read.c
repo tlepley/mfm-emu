@@ -55,6 +55,18 @@
 #include "drive.h"
 #include "board.h"
 
+static int map_logical_to_physical_head(DRIVE_PARAMS *drive_params, int head) {
+   if (!drive_params->head_map_specified) {
+      return head;
+   }
+   for (int i = 0; i < MAX_HEAD; i++) {
+      if (drive_params->head_map[i] == head) {
+         return i;
+      }
+   }
+   return head;
+}
+
 // Read the disk.
 //  drive params specifies the information needed to decode the drive and what
 //    files should be written from the data read
@@ -260,6 +272,7 @@ void drive_read_disk(DRIVE_PARAMS *drive_params, void *deltas, int max_deltas)
 // return non zero if write fault present and return_write_fault true.
 int drive_read_track(DRIVE_PARAMS *drive_params, int cyl, int head, 
       void *deltas, int max_deltas, int return_write_fault) {
+   int physical_head = map_logical_to_physical_head(drive_params, head);
 
    if (cyl != drive_current_cyl()) {
       drive_step(drive_params->step_speed, cyl - drive_current_cyl(), 
@@ -270,7 +283,7 @@ int drive_read_track(DRIVE_PARAMS *drive_params, int cyl, int head,
    pru_write_word(MEM_PRU0_DATA, PRU0_START_TIME_CLOCKS,
       drive_params->start_time_ns / CLOCKS_TO_NS);
 
-   drive_set_head(head);
+   drive_set_head(physical_head);
 
    if (pru_exec_cmd(CMD_READ_TRACK, 0) != 0) {
       drive_print_drive_status(MSG_FATAL, drive_get_drive_status());

@@ -69,6 +69,13 @@ values.</p>
 bit head encoding used by WD 1003 controller. Default is 4 bit. This
 will not be detected by analyze. The wrong number of heads may be
 selected.</p>
+<p style="margin-bottom: 0in">--head_map -H physical:logical[,physical:logical...]</p>
+<p style="margin-left: 0.5in; margin-bottom: 0in">Decode only the
+listed physical heads from a transition or emulation file and treat
+them as the specified logical heads. Header head IDs matching a
+physical head in the map are also remapped before validation and
+writing the extracted data file. This is useful for media where one
+transition file contains multiple independently numbered head groups.</p>
 <p style="margin-bottom: 0in">--header_crc  -g #h,#h,#h[,#h]</p>
 <p style="margin-left: 0.5in; margin-bottom: 0in">The CRC/ECC
 parameters for the sector header. Initial value, polynomial,

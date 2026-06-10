@@ -150,6 +150,19 @@ char *parse_print_cmdline(DRIVE_PARAMS *drive_params, int print,
    if (drive_params->head_3bit) {
       safe_print(&cmdptr, &cmdleft, "--head_3bit ");
    }
+   if (drive_params->head_map_specified) {
+      int printed = 0;
+
+      safe_print(&cmdptr, &cmdleft, "--head_map ");
+      for (int i = 0; i < MAX_HEAD; i++) {
+         if (drive_params->head_map[i] != -1) {
+            safe_print(&cmdptr, &cmdleft, "%s%d:%d", printed ? "," : "",
+               i, drive_params->head_map[i]);
+            printed = 1;
+         }
+      }
+      safe_print(&cmdptr, &cmdleft, " ");
+   }
    if (!no_retries_drive_interleave && drive_params->sector_numbers != NULL) {
       int i;
       safe_print(&cmdptr, &cmdleft, " --interleave ");
@@ -354,6 +367,47 @@ static uint8_t *parse_interleave(char *arg, DRIVE_PARAMS *drive_params) {
       return sectors;
 }
 
+static void clear_head_map(DRIVE_PARAMS *drive_params) {
+   for (int i = 0; i < MAX_HEAD; i++) {
+      drive_params->head_map[i] = -1;
+   }
+}
+
+static void parse_head_map(char *arg, DRIVE_PARAMS *drive_params,
+      int ignore_invalid_options) {
+   char *tok;
+
+   clear_head_map(drive_params);
+   drive_params->head_map_specified = 1;
+   tok = strtok(arg,",");
+   while (tok != NULL) {
+      char *sep = strpbrk(tok, ":=");
+      int physical_head;
+      int logical_head;
+
+      if (sep == NULL) {
+         msg(MSG_FATAL, "Head map entries must be physical:logical\n");
+         if (!ignore_invalid_options) {
+            exit(1);
+         }
+         return;
+      }
+      *sep = 0;
+      physical_head = atoi(tok);
+      logical_head = atoi(sep + 1);
+      if (physical_head < 0 || physical_head >= MAX_HEAD ||
+            logical_head < 0 || logical_head >= MAX_HEAD) {
+         msg(MSG_FATAL, "Head map values must be 0 to %d\n", MAX_HEAD - 1);
+         if (!ignore_invalid_options) {
+            exit(1);
+         }
+         return;
+      }
+      drive_params->head_map[physical_head] = logical_head;
+      tok = strtok(NULL,",");
+   }
+}
+
 // Parse analyze optional arguments
 //
 // arg: Interleave information string
@@ -457,9 +511,10 @@ static struct option long_options[] = {
          {"track_words", 1, NULL, 'w'},
          {"ignore_seek_errors", 0, NULL, 'I'},
          {"xebec_skew", 2, NULL, 'x'},
+         {"head_map", 1, NULL, 'H'},
          {NULL, 0, NULL, 0}
 };
-static char short_options[] = "s:h:c:g:d:f:j:l:ui:3r:a::q:b:t:e:m:vn:M:w:Ix";
+static char short_options[] = "s:h:c:g:d:f:j:l:ui:3H:r:a::q:b:t:e:m:vn:M:w:Ix";
 
 // Main routine for parsing command lines
 //
@@ -513,6 +568,7 @@ void parse_cmdline(int argc, char *argv[], DRIVE_PARAMS *drive_params,
       drive_params->analyze = 0;
       drive_params->start_time_ns = 0;
       drive_params->header_crc.length = -1; // 0 is valid
+      clear_head_map(drive_params);
    }
    // Handle the options. The long options are converted to the short
    // option name for the switch by getopt_long.
@@ -603,6 +659,9 @@ void parse_cmdline(int argc, char *argv[], DRIVE_PARAMS *drive_params,
             break;
          case '3':
             drive_params->head_3bit = 1;
+            break;
+         case 'H':
+            parse_head_map(optarg, drive_params, ignore_invalid_options);
             break;
          case 'f':
             drive_params->controller = parse_controller(optarg, 

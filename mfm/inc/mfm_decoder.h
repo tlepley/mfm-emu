@@ -318,6 +318,10 @@ typedef struct {
    // One WD controller truncated the head number to 3 bits in the header. This
    // enables processing for that.
    int head_3bit;
+   // Map physical/header head IDs to logical head IDs for decoding a subset of
+   // heads from a transition file. -1 means not mapped.
+   int head_map[MAX_HEAD];
+   int head_map_specified;
    // Number of retries to do when an error is found reading the disk
    int retries;
    // Number of retries to do without seeking
