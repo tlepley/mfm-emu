@@ -89,7 +89,7 @@ mfm_read :  $(OBJECTS)
 mfm_util :   $(OBJECTS2)
 	$(CC)  $(OBJECTS2) $(LIB_PATH:%=-L %) -lm -lrt -liberty -o $@
 ext2emu : mfm_util
-	ln -s mfm_util ext2emu
+	ln -sf mfm_util ext2emu
 mfm_write :  $(OBJECTS3)
 	$(CC)  $(OBJECTS3)  -Wl,-rpath=$(LIB_PATH) $(LIB_PATH:%=-L %) $(LIBRARIES:%=-l%) -o $@
 
@@ -97,7 +97,7 @@ find_crc_info : find_crc_info.cpp
 	$(CPP) -O3 -std=c++0x -Wall $< -o $@
 
 clean :
-	rm -rf $(OBJDIR)/*.o *.bin mfm_read mfm_util core *~ find_crc_info
+	rm -rf $(OBJDIR)/*.o *.bin *.dtbo mfm_read mfm_util ext2emu mfm_write core *~ find_crc_info
 
 %.bin: %.p prucode.hp $(INCDIR)/cmd.h drive_operations.p
 	$(PASM) -b $<
