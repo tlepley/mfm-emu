@@ -274,16 +274,22 @@ int drive_read_track(DRIVE_PARAMS *drive_params, int cyl, int head,
       void *deltas, int max_deltas, int return_write_fault) {
    int physical_head = map_logical_to_physical_head(drive_params, head);
 
-   if (cyl != drive_current_cyl()) {
-      drive_step(drive_params->step_speed, cyl - drive_current_cyl(), 
-         DRIVE_STEP_UPDATE_CYL, DRIVE_STEP_FATAL_ERR);
-   }
-
-      // Analyze can change so set it every time
+   // Analyze can change so set it every time
    pru_write_word(MEM_PRU0_DATA, PRU0_START_TIME_CLOCKS,
       drive_params->start_time_ns / CLOCKS_TO_NS);
 
    drive_set_head(physical_head);
+   // Some drives, such as the DMA Micro-Magnum 5/5, can reposition after head
+   // select and drop seek complete until the selected head is back on track.
+   if (pru_exec_cmd(CMD_CHECK_READY, 0)) {
+      drive_print_drive_status(MSG_FATAL, drive_get_drive_status());
+      exit(1);
+   }
+
+   if (cyl != drive_current_cyl()) {
+      drive_step(drive_params->step_speed, cyl - drive_current_cyl(),
+         DRIVE_STEP_UPDATE_CYL, DRIVE_STEP_FATAL_ERR);
+   }
 
    if (pru_exec_cmd(CMD_READ_TRACK, 0) != 0) {
       drive_print_drive_status(MSG_FATAL, drive_get_drive_status());
