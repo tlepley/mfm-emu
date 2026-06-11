@@ -307,6 +307,18 @@ int drive_current_cyl() {
    return current_cyl;
 }
 
+static int map_logical_to_physical_head(DRIVE_PARAMS *drive_params, int head) {
+   if (!drive_params->head_map_specified) {
+      return head;
+   }
+   for (int i = 0; i < MAX_HEAD; i++) {
+      if (drive_params->head_map[i] == head) {
+         return i;
+      }
+   }
+   return head;
+}
+
 // Select drive, check if drive is ready and then return to track zero if needed
 //
 // drive_params: Drive parameters
@@ -315,9 +327,10 @@ void drive_setup(DRIVE_PARAMS *drive_params)
    // Turn off recovery mode
    drive_enable_recovery(0);
 
-   // Make sure head lines valid. NEC D5124 generates write fault if invalid 
-   // head selected. 
-   drive_set_head(0); 
+   // Make sure head lines valid. NEC D5124 generates write fault if invalid
+   // head selected. With head_map, select the first logical head's physical
+   // head before checking ready or seeking track 0.
+   drive_set_head(map_logical_to_physical_head(drive_params, 0));
 
    drive_select(drive_params->drive);
 
@@ -413,4 +426,3 @@ void drive_enable_recovery(int enable)
    }
    usleep(100); // Allow lines to settle
 }
-
