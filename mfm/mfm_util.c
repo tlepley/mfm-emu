@@ -157,7 +157,7 @@ int main (int argc, char *argv[])
             msg(MSG_INFO, "Note: %s\n", orig_note);
          }
          // We need first argument of new argv to be program name argv[0]
-         cmdline = msg_malloc(strlen(orig_cmdline) + strlen(argv[0]) + 1, 
+         cmdline = msg_malloc(strlen(orig_cmdline) + strlen(argv[0]) + 2, 
             "main cmdline");
          strcpy(cmdline, argv[0]);
          strcat(cmdline, " ");
