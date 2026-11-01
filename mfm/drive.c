@@ -76,6 +76,11 @@
 // The cylinder the drive heads are at
 static int current_cyl;
 
+// Maximum steps when returning to track 0. More than MFM/RLL drives
+// cylinders. Prevents stepping forever against the stop if the drive never
+// signals track 0.
+#define TRACK0_MAX_STEPS 1280
+
 // Activate drive selects to select specified drive
 //
 // drive: drive number to select (1-4) or zero to select none.
@@ -240,18 +245,25 @@ int drive_at_track0(void)
 
 // Return the heads to track 0. This is slow so if you know what track you
 // are on use a normal seek.
+// Step one cylinder at a time with the slow (ST506) step timing and wait for
+// seek complete before checking track 0. Drives with buffered seeks may not
+// drop seek complete right after the step pulse so sending the next pulse
+// as soon as seek complete is seen can send all the pulses before the heads
+// move. Found on a Shugart SA706, return to track 0 from cylinder 319 failed.
 void drive_seek_track0(void)
 {
-   int rc;
-   rc = pru_exec_cmd(CMD_SEEK_SLOW_TRACK0, -MAX_CYL);
-   if (rc != 0) {
-      drive_print_drive_status(MSG_FATAL, drive_get_drive_status());
-      exit(1);
-   };
-   // Low indicates we are at track 0
-   if (!drive_at_track0()) {
-      msg(MSG_FATAL,"Failed to reach track 0\n");
-      exit(1);
+   int steps;
+
+   for (steps = 0; !drive_at_track0(); steps++) {
+      if (steps >= TRACK0_MAX_STEPS) {
+         msg(MSG_FATAL,"Failed to reach track 0 after %d steps. Try power cycling the drive\n",
+            TRACK0_MAX_STEPS);
+         exit(1);
+      }
+      if (pru_exec_cmd(CMD_SEEK_SLOW, -1) != 0) {
+         drive_print_drive_status(MSG_FATAL, drive_get_drive_status());
+         exit(1);
+      }
    }
    current_cyl = 0;
 }
