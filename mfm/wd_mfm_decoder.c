@@ -2992,6 +2992,7 @@ SECTOR_DECODE_STATUS wd_decode_track(DRIVE_PARAMS *drive_params, int cyl,
                (raw_word & 0xffff) == mark_pattern && good_mark) ) {
                if (first_addr_mark_ns == 0) {
                   first_addr_mark_ns = track_time * CLOCKS_TO_NS;
+                  drive_params->first_addr_mark_ns = first_addr_mark_ns;
                }
                if (header_raw_bit_count != 0) {
                   if (drive_params->controller == CONTROLLER_OMTI_20L) {
@@ -3207,6 +3208,9 @@ SECTOR_DECODE_STATUS wd_decode_track(DRIVE_PARAMS *drive_params, int cyl,
              + first_addr_mark_ns) / 2 + drive_params->start_time_ns;
       msg(MSG_ERR, "Ran out of data on sector index %d, try adding --begin_time %.0f to mfm_read command line\n",
          sector_index, round(begin_time / 1000.0) * 1000.0);
+      drive_params->track_end_overlap_ns = (bytes_needed - byte_cntr) * 16.0 *
+          1e9/mfm_controller_info[drive_params->controller].clk_rate_hz +
+          drive_params->start_time_ns;
    }
 
    // Force last partial word to be saved

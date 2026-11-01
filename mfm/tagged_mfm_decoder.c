@@ -469,6 +469,7 @@ last_tot_raw_bit_cntr = tot_raw_bit_cntr;
 #endif
                if (first_addr_mark_ns == 0) {
                   first_addr_mark_ns = track_time * CLOCKS_TO_NS;
+                  drive_params->first_addr_mark_ns = first_addr_mark_ns;
                }
 
                zero_count = 0;
@@ -596,6 +597,9 @@ last_tot_raw_bit_cntr = tot_raw_bit_cntr;
              + first_addr_mark_ns) / 2 + drive_params->start_time_ns;
       msg(MSG_ERR, "Ran out of data on sector index %d, try adding --begin_time %.0f to mfm_read command line\n",
          sector_index, round(begin_time / 1000.0) * 1000.0);
+      drive_params->track_end_overlap_ns = (bytes_needed - byte_cntr) * 16.0 *
+          1e9/mfm_controller_info[drive_params->controller].clk_rate_hz +
+          drive_params->start_time_ns;
    }
 
    // Force last partial word to be saved

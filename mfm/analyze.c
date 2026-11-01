@@ -855,6 +855,91 @@ static int analyze_seek(DRIVE_PARAMS *drive_params) {
    return rc;
 }
 
+static int compare_uint32(const void *a, const void *b)
+{
+   uint32_t va = *(const uint32_t *) a;
+   uint32_t vb = *(const uint32_t *) b;
+
+   return (va > vb) - (va < vb);
+}
+
+// Print minimum, maximum, mean, median and standard deviation of values.
+// values is sorted.
+//
+// name: Description of values
+// values: Values in ns
+// count: Number of values
+static void print_ns_stats(char *name, uint32_t values[], int count)
+{
+   double sum = 0, sum_sq = 0, mean;
+   int i;
+
+   if (count == 0) {
+      return;
+   }
+   qsort(values, count, sizeof(values[0]), compare_uint32);
+   for (i = 0; i < count; i++) {
+      sum += values[i];
+   }
+   mean = sum / count;
+   for (i = 0; i < count; i++) {
+      sum_sq += (values[i] - mean) * (values[i] - mean);
+   }
+   msg(MSG_INFO, "%s: min %u max %u mean %.0f median %u std dev %.0f ns\n",
+      name, values[0], values[count - 1], mean, values[count / 2],
+      sqrt(sum_sq / count));
+}
+
+// Set the start time from what was measured on the tracks read by
+// analyze_disk_size. Some controllers write the last sector across the index
+// so with the start time from the format it is cut off. Format matching
+// allows one missing sector so the format is still found. The start time
+// must be after the end of the last sector on every track and before the
+// first sector so it isn't cut off. Use the middle of that window.
+// Found with a Xebec 104527 controller on a Shugart SA706.
+//
+// drive_params: Drive parameters, start_time_ns updated
+// cut_tracks: Number of tracks with the last sector cut off
+// overlap_ns: Largest time from index to end of last sector
+// first_mark_ns: Smallest time from index to first address mark
+static void analyze_set_start_time(DRIVE_PARAMS *drive_params,
+      int cut_tracks, uint32_t overlap_ns, uint32_t first_mark_ns)
+{
+   // Margin after the end of the last sector
+   const uint32_t end_margin_ns = 10000;
+   // Margin before the first address mark for the sync field
+   const uint32_t sync_margin_ns = 20000;
+   uint32_t low_ns, high_ns, start_time_ns;
+
+   if (drive_params->dont_change_start_time) {
+      msg(MSG_INFO, "Keeping --begin_time %u from command line\n",
+         drive_params->start_time_ns);
+      return;
+   }
+   if (cut_tracks == 0) {
+      msg(MSG_INFO, "No track end overlap after index, keeping controller default --begin_time %u\n",
+         drive_params->start_time_ns);
+      return;
+   }
+   low_ns = overlap_ns + end_margin_ns;
+   if (first_mark_ns == UINT32_MAX) {
+      start_time_ns = low_ns;
+   } else {
+      high_ns = first_mark_ns > sync_margin_ns ? first_mark_ns - sync_margin_ns : 0;
+      if (low_ns > high_ns) {
+         msg(MSG_ERR, "Track end overlaps index but no --begin_time works for all tracks\n");
+         return;
+      }
+      start_time_ns = (low_ns + high_ns) / 2;
+   }
+   start_time_ns = (start_time_ns + 999) / 1000 * 1000;
+   msg(MSG_INFO, "Track end overlaps index, using --begin_time %u instead of controller default %u\n",
+      start_time_ns, drive_params->start_time_ns);
+   drive_params->start_time_ns = start_time_ns;
+   // Keep it when the controller parameters are set again
+   drive_params->dont_change_start_time = 1;
+}
+
 // Find the number of cylinders the disk has. We step down the disk until we
 // find unreadable tracks, the cylinder number in header doesn't match, or
 // seek times out. Various disks have different behavior. The tracks past the end
@@ -884,6 +969,10 @@ static void analyze_disk_size(DRIVE_PARAMS *drive_params, int start_cyl,
    int i;
    int last_printed_cyl;
    int rc;
+   // Start time measurement on good tracks, see analyze_set_start_time
+   int cut_tracks = 0, mark_tracks = 0;
+   uint32_t overlap_ns = 0, first_mark_ns = UINT32_MAX;
+   static uint32_t overlap_list[MAX_CYL], mark_list[MAX_CYL];
 
    max_cyl = 0;
    no_header_count = 0;
@@ -906,6 +995,8 @@ static void analyze_disk_size(DRIVE_PARAMS *drive_params, int start_cyl,
       drive_read_track(drive_params, cyl, head, deltas, max_deltas, 0);
 
       mfm_init_sector_status_list(sector_status_list, drive_params->num_sectors);
+      drive_params->track_end_overlap_ns = 0;
+      drive_params->first_addr_mark_ns = 0;
       msg_mask_hold = msg_set_err_mask(decode_errors);
       mfm_decode_track(drive_params, cyl, head, deltas, NULL, sector_status_list);
       msg_set_err_mask(msg_mask_hold);
@@ -924,6 +1015,18 @@ static void analyze_disk_size(DRIVE_PARAMS *drive_params, int start_cyl,
             } else {
                max_cyl = MAX(max_cyl, sector_status_list[i].cyl);
             }
+         }
+      }
+      if (any_header_found && !not_next_cyl) {
+         if (drive_params->first_addr_mark_ns != 0) {
+            mark_list[mark_tracks] = drive_params->start_time_ns +
+               drive_params->first_addr_mark_ns;
+            first_mark_ns = MIN(first_mark_ns, mark_list[mark_tracks]);
+            mark_tracks++;
+         }
+         if (drive_params->track_end_overlap_ns != 0) {
+            overlap_list[cut_tracks++] = drive_params->track_end_overlap_ns;
+            overlap_ns = MAX(overlap_ns, drive_params->track_end_overlap_ns);
          }
       }
       if (!any_header_found) {
@@ -962,6 +1065,12 @@ static void analyze_disk_size(DRIVE_PARAMS *drive_params, int start_cyl,
    msg(MSG_INFO, "Number of cylinders %d, %.1f MB\n", drive_params->num_cyl,
          (double) drive_params->num_cyl * drive_params->num_head *
          drive_params->num_sectors * drive_params->sector_size / (1000.0*1000));
+   msg(MSG_INFO, "Default begin time for this controller (%s): %u ns\n",
+      mfm_controller_info[drive_params->controller].name,
+      mfm_controller_info[drive_params->controller].start_time_ns);
+   print_ns_stats("First address mark after index", mark_list, mark_tracks);
+   print_ns_stats("Track end overlap after index", overlap_list, cut_tracks);
+   analyze_set_start_time(drive_params, cut_tracks, overlap_ns, first_mark_ns);
    // We don't know where head is so return to 0
    drive_seek_track0();
 }

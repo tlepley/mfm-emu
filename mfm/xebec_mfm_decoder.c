@@ -571,6 +571,7 @@ if ((raw_word & 0xffff) == 0x4489) {
             if ((raw_word & 0xffff) == 0x4489 && sync_count >= mark_num_zero) {
                if (first_addr_mark_ns == 0) {
                   first_addr_mark_ns = track_time * CLOCKS_TO_NS;
+                  drive_params->first_addr_mark_ns = first_addr_mark_ns;
                }
                sync_count = 0;
                state = HEADER_SYNC;
@@ -716,6 +717,9 @@ if ((raw_word & 0xff) == 0x49 && head == 0) {
              + first_addr_mark_ns) / 2 + drive_params->start_time_ns;
       msg(MSG_ERR, "Ran out of data byte %d on sector index %d, try adding --begin_time %.0f to mfm_read command line\n", byte_cntr,
          sector_index, round(begin_time / 1000.0) * 1000.0);
+      drive_params->track_end_overlap_ns = (bytes_needed - byte_cntr) * 16.0 *
+          1e9/mfm_controller_info[drive_params->controller].clk_rate_hz +
+          drive_params->start_time_ns;
    }
 
    // Force last partial word to be saved

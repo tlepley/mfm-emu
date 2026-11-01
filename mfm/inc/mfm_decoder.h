@@ -365,6 +365,12 @@ typedef struct {
    // Non zero if start_time_ns has been set either from input file or command
    // line and shouldn't be overridden.
    int dont_change_start_time;
+   // Set by decoders when the last sector crosses the index and was cut
+   // off to the time from index to the end of the sector. Used by analyze.
+   uint32_t track_end_overlap_ns;
+   // Set by decoders to the time from start of track read to the first
+   // address mark found. Used by analyze.
+   uint32_t first_addr_mark_ns;
    // List of sector to mark bad in ext2emu. Sorted ascending
    MARK_BAD_INFO *mark_bad_list;
    // Linked list of alternate tracks for fixing extracted data file

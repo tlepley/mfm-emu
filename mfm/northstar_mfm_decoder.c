@@ -547,6 +547,7 @@ SECTOR_DECODE_STATUS northstar_decode_track(DRIVE_PARAMS *drive_params, int cyl,
 //printf("Sync %d,%d cyl %d head %d sect %d\n",tot_raw_bit_cntr, (track_time * 5 + drive_params->start_time_ns)/101, cyl, head, sector_index);
                if (first_addr_mark_ns == 0) {
                   first_addr_mark_ns = track_time * CLOCKS_TO_NS;
+                  drive_params->first_addr_mark_ns = first_addr_mark_ns;
                }
                // Time next header should start at
                decoded_word = 0;
@@ -685,6 +686,9 @@ SECTOR_DECODE_STATUS northstar_decode_track(DRIVE_PARAMS *drive_params, int cyl,
              + first_addr_mark_ns) / 2 + drive_params->start_time_ns;
       msg(MSG_ERR, "Ran out of data on sector index %d, try adding --begin_time %.0f to mfm_read command line\n",
          sector_index, round(begin_time / 1000.0) * 1000.0);
+      drive_params->track_end_overlap_ns = (bytes_needed - byte_cntr) * 16.0 *
+          1e9/mfm_controller_info[drive_params->controller].clk_rate_hz +
+          drive_params->start_time_ns;
    }
    // Force last partial word to be saved
    mfm_save_raw_word(drive_params, all_raw_bits_count, 32-all_raw_bits_count,
