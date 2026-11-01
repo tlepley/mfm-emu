@@ -345,6 +345,61 @@ void drive_setup(DRIVE_PARAMS *drive_params)
    }
 }
 
+// Step through all the drive selects to find the drive. Exits if not found.
+//
+// drive_params: Drive parameters, drive is set to the select found
+void drive_find(DRIVE_PARAMS *drive_params)
+{
+   int ready = 0;
+   int i;
+
+   for (i = 1; i <= 4 && !ready; i++) {
+      int wait_count = 0;
+      drive_params->drive = i;
+      drive_select(drive_params->drive);
+
+      // Wait up to 100 ms for drive to be selected
+      while (wait_count++ < 100 && !ready) {
+         usleep(1000);
+         // Bit is active low
+         ready = !(drive_get_drive_status() & BIT_MASK(R31_DRIVE_SEL));
+      }
+   }
+   if (ready) {
+      msg(MSG_INFO,"Found drive at select %d\n",drive_params->drive);
+   } else {
+      msg(MSG_INFO,"Unable to find drive. If just powered on retry in 30 seconds\n");
+      exit(1);
+   }
+}
+
+// Move the heads to the landing zone cylinder. Stepper drives like the
+// Shugart SA706/SA712 don't park themselves at power off. We return to
+// track 0 first so the park works even if the current cylinder is wrong.
+//
+// drive_params: Drive parameters
+void drive_park(DRIVE_PARAMS *drive_params)
+{
+   int rc;
+
+   if (drive_params->drive == 0) {
+      drive_find(drive_params);
+   }
+   drive_setup(drive_params);
+   msg(MSG_INFO, "Parking heads at cylinder %d\n", drive_params->park_cyl);
+   rc = drive_step(drive_params->step_speed, drive_params->park_cyl,
+      DRIVE_STEP_UPDATE_CYL, DRIVE_STEP_RET_ERR);
+   // Give time for track0 to change before we check
+   usleep(1000);
+   if (rc == DRIVE_STEP_TIMEOUT || drive_at_track0()) {
+      msg(MSG_FATAL, "Seek to cylinder %d failed, heads not parked\n",
+         drive_params->park_cyl);
+      drive_print_drive_status(MSG_FATAL, drive_get_drive_status());
+      exit(1);
+   }
+   msg(MSG_INFO, "Heads parked, the drive can be powered off\n");
+}
+
 // Return the drive status value. See print routine for bit definitions.
 uint32_t drive_get_drive_status(void)
 {

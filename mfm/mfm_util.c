@@ -178,7 +178,7 @@ int main (int argc, char *argv[])
 
    // Now parse the full command line. This allows overriding options that
    // were in the transition file header.
-   parse_cmdline(argc, argv, &drive_params, "Mrdi", 0, 0, 0, 0);
+   parse_cmdline(argc, argv, &drive_params, "MrdiP", 0, 0, 0, 0);
    // Save final parameters
    drive_params.cmdline = parse_print_cmdline(&drive_params, 0, 0);
 
@@ -1105,7 +1105,7 @@ void ext2emu(int argc, char *argv[])
    int calc_size;
    CONTROLLER *controller;
 
-   parse_cmdline(argc, argv, &drive_params, "sgjdlu3rat", 1, 0, 0, 1);
+   parse_cmdline(argc, argv, &drive_params, "sgjdlu3ratP", 1, 0, 0, 1);
 
    parse_validate_options_listed(&drive_params, "hcemf");
 

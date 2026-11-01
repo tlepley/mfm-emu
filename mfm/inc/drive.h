@@ -12,6 +12,8 @@ void drive_select(int drive);
 void drive_set_head(int head);
 void drive_seek_track0(void);
 void drive_setup(DRIVE_PARAMS *drive_params);
+void drive_find(DRIVE_PARAMS *drive_params);
+void drive_park(DRIVE_PARAMS *drive_params);
 void drive_read_disk(DRIVE_PARAMS *drive_params, void *deltas, int max_deltas);
 int drive_at_track0(void);
 uint32_t drive_get_drive_status(void);

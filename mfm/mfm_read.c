@@ -128,8 +128,8 @@ int main(int argc, char *argv[])
          drive_params.transitions_filename != NULL) {
       read = 1;
    }
-   if (!read && !drive_params.analyze) {
-      msg(MSG_FATAL, "Analyze and/or output filenames must be specified\n");
+   if (!read && !drive_params.analyze && !drive_params.park_cyl) {
+      msg(MSG_FATAL, "Analyze, park and/or output filenames must be specified\n");
       exit(1);
    }
 
@@ -199,6 +199,10 @@ int main(int argc, char *argv[])
    if (read) {
       drive_setup(&drive_params);
       drive_read_disk(&drive_params, deltas, max_deltas);
+   }
+
+   if (drive_params.park_cyl) {
+      drive_park(&drive_params);
    }
 
    pru_exec_cmd(CMD_EXIT, 0);

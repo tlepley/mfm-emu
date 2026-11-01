@@ -1133,8 +1133,6 @@ int analyze_format(DRIVE_PARAMS *drive_params, void *deltas, int max_deltas,
 void analyze_disk(DRIVE_PARAMS *drive_params, void *deltas, int max_deltas,
       int use_file)
 {
-   int ready = 0;
-   int i;
    int cyl, head;
    DRIVE_PARAMS drive_params_hold;
 
@@ -1160,25 +1158,7 @@ void analyze_disk(DRIVE_PARAMS *drive_params, void *deltas, int max_deltas,
    drive_params->analyze_in_progress = 1;
 
    if (!use_file) {
-      // Step through all the drive selects to find the drive
-      for (i = 1; i <= 4 && !ready; i++) {
-         int wait_count = 0;
-         drive_params->drive = i;
-         drive_select(drive_params->drive);
-
-         // Wait up to 100 ms for drive to be selected
-         while (wait_count++ < 100 && !ready) {
-            usleep(1000);
-            // Bit is active low
-            ready = !(drive_get_drive_status() & BIT_MASK(R31_DRIVE_SEL));
-         }
-      }
-      if (ready) {
-         msg(MSG_INFO,"Found drive at select %d\n",drive_params->drive);
-      } else {
-         msg(MSG_INFO,"Unable to find drive. If just powered on retry in 30 seconds\n");
-         exit(1);
-      }
+      drive_find(drive_params);
       drive_setup(drive_params);
       msg(MSG_INFO, "Drive RPM %.1f\n", drive_rpm());
 

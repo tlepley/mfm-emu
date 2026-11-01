@@ -65,6 +65,11 @@ void drive_setup(DRIVE_PARAMS *drive_params) {
    exit(1);
 }
 
+void drive_find(DRIVE_PARAMS *drive_params) {
+   msg(MSG_FATAL, "drive_find called\n");
+   exit(1);
+}
+
 double drive_rpm() {
    return 0;
 }

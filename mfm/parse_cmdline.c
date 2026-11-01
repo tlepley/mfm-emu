@@ -454,9 +454,10 @@ static struct option long_options[] = {
          {"track_words", 1, NULL, 'w'},
          {"ignore_seek_errors", 0, NULL, 'I'},
          {"xebec_skew", 2, NULL, 'x'},
+         {"park", 1, NULL, 'P'},
          {NULL, 0, NULL, 0}
 };
-static char short_options[] = "s:h:c:g:d:f:j:l:ui:3r:a::q:b:t:e:m:vn:M:w:Ix";
+static char short_options[] = "s:h:c:g:d:f:j:l:ui:3r:a::q:b:t:e:m:vn:M:w:IxP:";
 
 // Main routine for parsing command lines
 //
@@ -677,6 +678,17 @@ void parse_cmdline(int argc, char *argv[], DRIVE_PARAMS *drive_params,
          case 'I':
             drive_params->ignore_seek_errors = 1;
             break;
+         case 'P':
+            drive_params->park_cyl = atoi(optarg);
+            if (drive_params->park_cyl <= 0 || drive_params->park_cyl >= MAX_CYL) {
+               msg(MSG_FATAL, "Park cylinder must be between 1 and %d\n",
+                  MAX_CYL - 1);
+               if (!ignore_invalid_options) {
+                  exit(1);
+               }
+               drive_params->park_cyl = 0;
+            }
+            break;
          case 'x':
             if (optarg == NULL) {
                drive_params->xebec_skew = 1;
@@ -712,9 +724,11 @@ void parse_validate_options(DRIVE_PARAMS *drive_params, int mfm_read) {
    // For mfm_util drive doesn't need to be specified. This
    // option error handling is getting messy.
    if (mfm_read) {
-      // Drive 1-4 valid if specified. If analyze specified drive will be 0
+      // Drive 1-4 valid if specified. If analyze or park specified drive
+      // will be 0 and the drive is searched for
       if ((drive_params->drive < 1 || drive_params->drive > 4) &&
-          !(drive_params->analyze && drive_params->drive == 0)) {
+          !((drive_params->analyze || drive_params->park_cyl) &&
+          drive_params->drive == 0)) {
          msg(MSG_FATAL, "Drive must be between 1 and 4\n");
          exit(1);
       }

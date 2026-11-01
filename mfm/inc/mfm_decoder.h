@@ -350,6 +350,8 @@ typedef struct {
    // What cylinder and head to analyze
    int analyze_cyl;
    int analyze_head;
+   // Cylinder to park the heads on before exit. 0 if no park
+   int park_cyl;
    // What options have been set. Used by command line parsing and validation
    uint32_t opt_mask;
    // Command line note parameter
