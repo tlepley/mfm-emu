@@ -878,6 +878,7 @@ static void analyze_disk_size(DRIVE_PARAMS *drive_params, int start_cyl,
    int not_next_cyl, not_next_cyl_count;
    int any_header_found;
    int no_header_count;
+   int bad_track_count;
    SECTOR_STATUS sector_status_list[MAX_SECTORS];
    int cyl;
    int i;
@@ -887,6 +888,7 @@ static void analyze_disk_size(DRIVE_PARAMS *drive_params, int start_cyl,
    max_cyl = 0;
    no_header_count = 0;
    not_next_cyl_count = 0;
+   bad_track_count = 0;
 
    for (cyl = start_cyl + 1; cyl < MAX_CYL; cyl++) {
       if (cyl % 5 == 0)
@@ -941,6 +943,19 @@ static void analyze_disk_size(DRIVE_PARAMS *drive_params, int start_cyl,
          }
       } else {
          not_next_cyl_count = 0;
+      }
+      // Unreadable and mismatching tracks alternating reset each other count.
+      // A Shugart SA706 (320 cylinders) on a Xebec controller gave this
+      // pattern past cylinder 319, in the unused area up to the shipping
+      // zone. Stop on two bad tracks in a row of any kind so we don't step
+      // past the end of the drive.
+      if (!any_header_found || not_next_cyl) {
+         if (++bad_track_count >= 2) {
+            msg(MSG_INFO, "Stopping end of disk search due to two bad tracks in a row\n");
+            break;
+         }
+      } else {
+         bad_track_count = 0;
       }
    }
    drive_params->num_cyl = max_cyl + 1;
