@@ -62,9 +62,8 @@ void msg(uint32_t level, char *format, ...) {
          printf("%79s\r","");
       }
       vprintf(format, va);
-      if (level & MSG_PROGRESS) {
-         fflush(stdout);
-      }
+      // Flush all messages, stdout is fully buffered when piped to tee
+      fflush(stdout);
       last_progress = level & MSG_PROGRESS;
    }
    if (logfile != NULL && (level & logfile_err_mask)) {
